@@ -317,11 +317,8 @@ pub fn recent_picker(editor: &Editor, root: PathBuf) -> FilePicker {
     };
 
     let mut files = {
-        let home = std::env::var("HOME").unwrap_or_default();
         let max_show_entries = config.recent_picker.max_show_entries;
-
-        // TODO: Use the config instead of hardcoded path
-        let recents_path = PathBuf::from(home).join(".cache/helix/recents.txt");
+        let recents_path = config.recent_picker.recents_path.clone();
 
         let entries: Vec<PathBuf> = if recents_path.exists() {
             let file = std::fs::File::open(recents_path).ok();
