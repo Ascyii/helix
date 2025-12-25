@@ -304,6 +304,111 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
     picker
 }
 
+// Only take the editor because the path for the recent files is saved in the config
+pub fn recent_picker(editor: &Editor) -> FilePicker {
+    use ignore::WalkBuilder;
+    use std::time::Instant;
+
+    let config = editor.config();
+
+    // Debug root
+    let root = PathBuf::from("/home/jonas/.cache/helix");
+
+    // Path to the txt files where the recent entries are stored
+    let recent_path = PathBuf::from("/home/jonas/.cache/helix/recent.txt");
+    let max_show_entries = config.recent_picker.max_show_entries;
+
+    let data = FilePickerData {
+        root: root.clone(),
+        directory_style: editor.theme.get("ui.text.directory"),
+    };
+
+    let now = Instant::now();
+
+    let dedup_symlinks = config.file_picker.deduplicate_links;
+    let absolute_root = root.canonicalize().unwrap_or_else(|_| root.clone());
+
+    let mut walk_builder = WalkBuilder::new(&root);
+
+    let mut files = walk_builder
+        .hidden(config.file_picker.hidden)
+        .parents(config.file_picker.parents)
+        .ignore(config.file_picker.ignore)
+        .follow_links(config.file_picker.follow_symlinks)
+        .git_ignore(config.file_picker.git_ignore)
+        .git_global(config.file_picker.git_global)
+        .git_exclude(config.file_picker.git_exclude)
+        .sort_by_file_name(|name1, name2| name1.cmp(name2))
+        .max_depth(config.file_picker.max_depth)
+        .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks))
+        .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"))
+        .add_custom_ignore_filename(".helix/ignore")
+        .types(get_excluded_types())
+        .build()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            if !entry.file_type()?.is_file() {
+                return None;
+            }
+            Some(entry.into_path())
+        });
+    log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
+
+    let columns = [PickerColumn::new(
+        "path",
+        |item: &PathBuf, data: &FilePickerData| {
+            let path = item.strip_prefix(&data.root).unwrap_or(item);
+            let mut spans = Vec::with_capacity(3);
+            if let Some(dirs) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                spans.extend([
+                    Span::styled(dirs.to_string_lossy(), data.directory_style),
+                    Span::styled(std::path::MAIN_SEPARATOR_STR, data.directory_style),
+                ]);
+            }
+            let filename = path
+                .file_name()
+                .expect("normalized paths can't end in `..`")
+                .to_string_lossy();
+            spans.push(Span::raw(filename));
+            Spans::from(spans).into()
+        },
+    )];
+    let picker = Picker::new(columns, 0, [], data, move |cx, path: &PathBuf, action| {
+        if let Err(e) = cx.editor.open(path, action) {
+            let err = if let Some(err) = e.source() {
+                format!("{}", err)
+            } else {
+                format!("unable to open \"{}\"", path.display())
+            };
+            cx.editor.set_error(err);
+        }
+    })
+    .with_preview(|_editor, path| Some((path.as_path().into(), None)));
+    let injector = picker.injector();
+    let timeout = std::time::Instant::now() + std::time::Duration::from_millis(30);
+
+    let mut hit_timeout = false;
+    for file in &mut files {
+        if injector.push(file).is_err() {
+            break;
+        }
+        if std::time::Instant::now() >= timeout {
+            hit_timeout = true;
+            break;
+        }
+    }
+    if hit_timeout {
+        std::thread::spawn(move || {
+            for file in files {
+                if injector.push(file).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    picker
+}
+
 type FileExplorer = Picker<(PathBuf, bool), (PathBuf, Style)>;
 
 pub fn file_explorer(root: PathBuf, editor: &Editor) -> Result<FileExplorer, std::io::Error> {
