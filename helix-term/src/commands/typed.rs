@@ -419,48 +419,43 @@ fn write_impl(
         None
     };
 
-    let mut saved = false;
     if fmt.is_none() {
         let id = doc.id();
         cx.editor.save(id, path, options.force)?;
-        saved = true;
     }
 
     // Recents tracking
-    if saved {
-        if let Some(p) = path {
-            let p = p.to_string();
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-            let recents_path: PathBuf =
-                [home.as_str(), ".cache/helix/recents.txt"].iter().collect();
+    if let Some(p) = path {
+        let p = p.to_string();
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let recents_path: PathBuf = [home.as_str(), ".cache/helix/recents.txt"].iter().collect();
 
-            std::fs::create_dir_all(recents_path.parent().unwrap_or_else(|| Path::new(".")))?;
+        std::fs::create_dir_all(recents_path.parent().unwrap_or_else(|| Path::new(".")))?;
 
-            let mut entries: Vec<String> = if recents_path.exists() {
-                let file = std::fs::File::open(&recents_path)?;
-                BufReader::new(file).lines().flatten().collect()
-            } else {
-                Vec::new()
-            };
+        let mut entries: Vec<String> = if recents_path.exists() {
+            let file = std::fs::File::open(&recents_path)?;
+            BufReader::new(file).lines().flatten().collect()
+        } else {
+            Vec::new()
+        };
 
-            entries.retain(|line| line != &p);
-            entries.insert(0, p);
+        entries.retain(|line| line != &p);
+        entries.insert(0, p);
 
-            // Trim
-            if entries.len() > MAX_RECENTS {
-                entries.truncate(MAX_RECENTS);
-            }
+        // Trim
+        if entries.len() > MAX_RECENTS {
+            entries.truncate(MAX_RECENTS);
+        }
 
-            // Write
-            let mut file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&recents_path)?;
+        // Write
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&recents_path)?;
 
-            for e in entries {
-                writeln!(file, "{}", e)?;
-            }
+        for e in entries {
+            writeln!(file, "{}", e)?;
         }
     }
 
