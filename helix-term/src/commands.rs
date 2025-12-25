@@ -3071,12 +3071,6 @@ fn file_picker(cx: &mut Context) {
 }
 
 fn recent_picker(cx: &mut Context) {
-    // TODO: Implement this function
-    // 1. Get the contents of the recent opened files list
-    // 2. Parse the content as a array of files (just the metadata about it)
-    // 3. Get the ui picker
-    // 4. Push the layer
-
     let picker = ui::recent_picker(cx.editor);
     cx.push_layer(Box::new(overlaid(picker)));
 }

@@ -306,16 +306,16 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
 
 // Only take the editor because the path for the recent files is saved in the config
 pub fn recent_picker(editor: &Editor) -> FilePicker {
-    use ignore::WalkBuilder;
-    use std::time::Instant;
+    use std::io::{BufRead, BufReader};
+    use std::path::PathBuf;
 
     let config = editor.config();
 
     // Debug root
-    let root = PathBuf::from("/home/jonas/.cache/helix");
+    let root = PathBuf::from(std::env::var("HOME").unwrap_or_default());
 
     // Path to the txt files where the recent entries are stored
-    let recent_path = PathBuf::from("/home/jonas/.cache/helix/recent.txt");
+    let recent_path = PathBuf::from("/home/jonas/.cache/helix/recent.txt"); // This is hardcoded for now
     let max_show_entries = config.recent_picker.max_show_entries;
 
     let data = FilePickerData {
@@ -323,36 +323,29 @@ pub fn recent_picker(editor: &Editor) -> FilePicker {
         directory_style: editor.theme.get("ui.text.directory"),
     };
 
-    let now = Instant::now();
+    let mut files = {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let recents_path = PathBuf::from(home).join(".cache/helix/recents.txt");
 
-    let dedup_symlinks = config.file_picker.deduplicate_links;
-    let absolute_root = root.canonicalize().unwrap_or_else(|_| root.clone());
-
-    let mut walk_builder = WalkBuilder::new(&root);
-
-    let mut files = walk_builder
-        .hidden(config.file_picker.hidden)
-        .parents(config.file_picker.parents)
-        .ignore(config.file_picker.ignore)
-        .follow_links(config.file_picker.follow_symlinks)
-        .git_ignore(config.file_picker.git_ignore)
-        .git_global(config.file_picker.git_global)
-        .git_exclude(config.file_picker.git_exclude)
-        .sort_by_file_name(|name1, name2| name1.cmp(name2))
-        .max_depth(config.file_picker.max_depth)
-        .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks))
-        .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"))
-        .add_custom_ignore_filename(".helix/ignore")
-        .types(get_excluded_types())
-        .build()
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if !entry.file_type()?.is_file() {
-                return None;
+        let entries: Vec<PathBuf> = if recents_path.exists() {
+            let file = std::fs::File::open(recents_path).ok();
+            if let Some(f) = file {
+                let reader = BufReader::new(f);
+                reader
+                    .lines()
+                    .flatten()
+                    .map(PathBuf::from)
+                    .filter(|p| p.exists())
+                    .collect()
+            } else {
+                Vec::new()
             }
-            Some(entry.into_path())
-        });
-    log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
+        } else {
+            Vec::new()
+        };
+
+        entries.into_iter()
+    };
 
     let columns = [PickerColumn::new(
         "path",
