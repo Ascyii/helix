@@ -3071,7 +3071,12 @@ fn file_picker(cx: &mut Context) {
 }
 
 fn recent_picker(cx: &mut Context) {
-    let picker = ui::recent_picker(cx.editor);
+    let root = find_workspace().0;
+    if !root.exists() {
+        cx.editor.set_error("Workspace directory does not exist");
+        return;
+    }
+    let picker = ui::recent_picker(cx.editor, root);
     cx.push_layer(Box::new(overlaid(picker)));
 }
 

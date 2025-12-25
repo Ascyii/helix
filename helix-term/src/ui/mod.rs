@@ -305,18 +305,11 @@ pub fn file_picker(editor: &Editor, root: PathBuf) -> FilePicker {
 }
 
 // Only take the editor because the path for the recent files is saved in the config
-pub fn recent_picker(editor: &Editor) -> FilePicker {
+pub fn recent_picker(editor: &Editor, root: PathBuf) -> FilePicker {
     use std::io::{BufRead, BufReader};
     use std::path::PathBuf;
 
     let config = editor.config();
-
-    // Debug root
-    let root = PathBuf::from(std::env::var("HOME").unwrap_or_default());
-
-    // Path to the txt files where the recent entries are stored
-    let recent_path = PathBuf::from("/home/jonas/.cache/helix/recent.txt"); // This is hardcoded for now
-    let max_show_entries = config.recent_picker.max_show_entries;
 
     let data = FilePickerData {
         root: root.clone(),
@@ -325,6 +318,9 @@ pub fn recent_picker(editor: &Editor) -> FilePicker {
 
     let mut files = {
         let home = std::env::var("HOME").unwrap_or_default();
+        let max_show_entries = config.recent_picker.max_show_entries;
+
+        // TODO: Use the config instead of hardcoded path
         let recents_path = PathBuf::from(home).join(".cache/helix/recents.txt");
 
         let entries: Vec<PathBuf> = if recents_path.exists() {
@@ -344,7 +340,10 @@ pub fn recent_picker(editor: &Editor) -> FilePicker {
             Vec::new()
         };
 
-        entries.into_iter()
+        entries
+            .into_iter()
+            .take(max_show_entries)
+            .collect::<Vec<_>>()
     };
 
     let columns = [PickerColumn::new(
@@ -382,7 +381,7 @@ pub fn recent_picker(editor: &Editor) -> FilePicker {
 
     let mut hit_timeout = false;
     for file in &mut files {
-        if injector.push(file).is_err() {
+        if injector.push(file.to_path_buf()).is_err() {
             break;
         }
         if std::time::Instant::now() >= timeout {
